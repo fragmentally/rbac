@@ -357,41 +357,41 @@ class BaseNestedSet implements NestedSetInterface
      * @param Array $Result
      * @return Array Tree
      */
-    #FIXME: think how to implement this!
-    /**
     function Result2Tree($Result)
     {
-        $out=array();
-        $stack=array();
-        $cur=&$out;
-        foreach($Result as $R)
-        {
-            if ($cur[$LastKey]['Depth']==$R['Depth'])
-            {
-                echo "adding 0 ".$R['Title'].BR;
-                $cur[$R[$this->id()]]=$R;
-                $LastKey=$R[$this->id()];
-            }
-            elseif ($cur[$LastKey]['Depth']<$R['Depth'])
-            {
-                echo "adding 1 ".$R['Title'].BR;
-                array_push($stack,$cur);
-                $cur=&$cur[$LastKey];
-                $cur[$R[$this->id()]]=$R;
-                $LastKey=$R[$this->id()];
-            }
-            elseif ($cur[$LastKey]['Depth']>$R['Depth'])
-            {
-                echo "adding 2 ".$R['Title'].BR;
-                $cur=array_pop($stack);
-                $cur[$R[$this->id()]]=$R;
-                $LastKey=$R[$this->id()];
-            }
-            
-        }
-        return $out;
-    }
-	/**/
-}
+        $tree = array();
+        $stack = array();
+        $curDepth = -1;
+        $stack[] =& $tree; // array_push() does not work for this.
 
-?>
+        foreach ($Result as $key => $value) {
+            if ($value['Depth'] > $curDepth) {
+                $curDepth = $value['Depth'];
+
+                $ref =& $stack[count($stack) - 1]; // array_pop() + array_push() yields bad results across PHP versions.
+                $ref[$key] = $value;
+                $ref[$key]['Children'] = array();
+                $stack[] =& $ref[$key]['Children'];
+            }
+            elseif ($value['Depth'] == $d) {
+                array_pop($stack);
+                $ref =& $stack[count($stack) - 1];
+                $ref[$key] = $value;
+                $ref[$key]['Children'] = array();
+                $stack[] =& $ref[$key]['Children'];
+            }
+            else {
+                for ($i = 0; $i < $curDepth - $value['Depth'] + 1; $i++) {
+                    array_pop($stack);
+                }
+                $curDepth = $value['Depth'];
+                $ref =& $stack[count($stack) - 1]; // array_pop() results in odd behavior, this works.
+                $ref[$key] = $value;
+                $ref[$key]['Children'] = array();
+                $stack[] =& $ref[$key]['Children'];
+            }
+        }
+
+        return $tree;
+    }
+}
