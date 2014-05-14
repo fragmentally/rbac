@@ -119,6 +119,12 @@ if (isset($_GET['errorsExist'])) {
                         <option>MySQLi</option>
                     <?php endif; ?>
 
+                    <?php if ($dbAdapter == 'PostgreSQL'): ?>
+                        <option selected="selected">PostgreSQL</option>
+                    <?php else: ?>
+                        <option>PostgreSQL</option>
+                    <?php endif; ?>
+
                     <?php if ($dbAdapter == 'SQLite'): ?>
                         <option selected="selected">SQLite</option>
                     <?php else: ?>
@@ -257,6 +263,9 @@ if (isset($_GET['errorsExist'])) {
         $dbNameString = '$dbname="' . $_GET['dbName'] . '";';
     } elseif ($_GET['dbAdapter'] == 'MySQLi') {
         $dbAdapterString = '$adapter="mysqli";';
+        $dbNameString = '$dbname="' . $_GET['dbName'] . '";';
+    } elseif ($_GET['dbAdapter'] == 'PostgreSQL') {
+        $dbAdapterString = '$adapter="pdo_pgsql";';
         $dbNameString = '$dbname="' . $_GET['dbName'] . '";';
     } else {
         $dbAdapterString = '$adapter="pdo_sqlite";';
