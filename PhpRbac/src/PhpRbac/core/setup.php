@@ -22,6 +22,15 @@ elseif ($adapter=="pdo_sqlite")
 		Jf::$Db=new PDO("sqlite:{$dbname}",$user,$pass);
 // 		Jf::$Db=new PDO("sqlite::memory:",$user,$pass);
 }
+elseif ($adapter == "pdo_pgsql") {
+    try {
+        Jf::$Db=new PDO("pgsql:host={$host};dbname={$dbname}",$user,$pass);
+    }
+    catch (PDOException $e)
+    {
+        installPdoPgSql($host,$user,$pass,$dbname);
+    }
+}
 else # default to mysqli
 {
 	@Jf::$Db=new mysqli($host,$user,$pass,$dbname);
@@ -45,6 +54,17 @@ function installPdoMysql($host,$user,$pass,$dbname)
 		$db->query($query);
 	Jf::$Db=new PDO("mysql:host={$host};dbname={$dbname}",$user,$pass);
 	Jf::$Rbac->reset(true);
+}
+function installPdoPgSql($host,$user,$pass,$dbname)
+{
+    $sqls=getSqls("postgresql");
+    $db=new PDO("pgsql:host={$host};",$user,$pass);
+    $db->query("CREATE DATABASE {$dbname}");
+    if (is_array($sqls))
+        foreach ($sqls as $query)
+            $db->query($query);
+    Jf::$Db=new PDO("pgsql:host={$host};dbname={$dbname}",$user,$pass);
+    Jf::$Rbac->reset(true);
 }
 function installPdoSqlite($host,$user,$pass,$dbname)
 {

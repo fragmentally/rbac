@@ -55,7 +55,7 @@ class Jf
 	static function sqlPdo($Query)
 	{
 	    $debug_backtrace = debug_backtrace();
-
+        $isPgSql = self::$Db->getAttribute(PDO::ATTR_DRIVER_NAME)=="pgsql";
 	    if((isset($debug_backtrace[3])) && ($debug_backtrace[3]['function'] == 'pathId')) {
     	    if (!self::$groupConcatLimitChanged) {
     	        $success = self::$Db->query ("SET SESSION group_concat_max_len = 1000000");
@@ -70,6 +70,7 @@ class Jf
 
 		if (count ( $args ) == 1)
 		{
+            if ($isPgSql) $Query = str_replace('`', '"', $Query);
 			$result = self::$Db->query ( $Query );
 			if ($result===false)
 				return null;
@@ -80,6 +81,7 @@ class Jf
 		}
 		else
 		{
+            if ($isPgSql) $Query = str_replace('`', '"', $Query);
 			if (! $stmt = self::$Db->prepare ( $Query ))
 			{
 				return false;

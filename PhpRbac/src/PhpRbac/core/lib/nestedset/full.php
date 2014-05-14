@@ -67,7 +67,7 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
     {
         $args=func_get_args();
         array_shift($args);
-        $Query="SELECT {$this->id()} AS ID FROM {$this->table()} WHERE $ConditionString LIMIT 1";
+        $Query="SELECT {$this->id()} AS `ID` FROM {$this->table()} WHERE $ConditionString LIMIT 1";
         array_unshift($args,$Query);
         $Res=call_user_func_array(("Jf::sql"),$args);
         if ($Res)
@@ -193,7 +193,7 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
 		$this->lock();
     	$Arguments=func_get_args();
         array_shift($Arguments);
-        $Query="SELECT {$this->left()} AS `Left`,{$this->right()} AS `Right` ,{$this->right()}-{$this->left()}+ 1 AS Width
+        $Query="SELECT {$this->left()} AS `Left`,{$this->right()} AS `Right` ,{$this->right()}-{$this->left()}+ 1 AS `Width`
 			FROM {$this->table()}
 			WHERE $ConditionString";
 
@@ -202,16 +202,10 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
 
         $Info=$Info[0];
 
-        $count=Jf::sql("
-            DELETE FROM {$this->table()} WHERE {$this->left()} BETWEEN ? AND ?
-        ",$Info["Left"],$Info["Right"]);
+        $count=Jf::sql("DELETE FROM {$this->table()} WHERE {$this->left()} BETWEEN ? AND ?",$Info["Left"],$Info["Right"]);
 
-        Jf::sql("
-            UPDATE {$this->table()} SET {$this->right()} = {$this->right()} - ? WHERE {$this->right()} > ?
-        ",$Info["Width"],$Info["Right"]);
-        Jf::sql("
-            UPDATE {$this->table()} SET {$this->left()} = {$this->left()} - ? WHERE {$this->left()} > ?
-        ",$Info["Width"],$Info["Right"]);
+        Jf::sql("UPDATE {$this->table()} SET {$this->right()} = {$this->right()} - ? WHERE {$this->right()} > ?",$Info["Width"],$Info["Right"]);
+        Jf::sql("UPDATE {$this->table()} SET {$this->left()} = {$this->left()} - ? WHERE {$this->left()} > ?",$Info["Width"],$Info["Right"]);
         $this->unlock();
         return $count>=1;
     }
@@ -227,17 +221,17 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
     function descendantsConditional($AbsoluteDepths=false,$ConditionString,$Rest=null)
     {
         if (!$AbsoluteDepths)
-            $DepthConcat="- (sub_tree.innerDepth )";
+            $DepthConcat="- (sub_tree.innerdepth )";
         $Arguments=func_get_args();
         array_shift($Arguments);
         array_shift($Arguments); //second argument, $AbsoluteDepths
         $Query="
-            SELECT node.*, (COUNT(parent.{$this->id()})-1 $DepthConcat) AS Depth
+            SELECT node.*, (COUNT(parent.{$this->id()})-1 $DepthConcat) AS `Depth`
             FROM {$this->table()} AS node,
             	{$this->table()} AS parent,
             	{$this->table()} AS sub_parent,
             	(
-            		SELECT node.{$this->id()}, (COUNT(parent.{$this->id()}) - 1) AS innerDepth
+            		SELECT node.{$this->id()}, (COUNT(parent.{$this->id()}) - 1) AS innerdepth
             		FROM {$this->table()} AS node,
             		{$this->table()} AS parent
             		WHERE node.{$this->left()} BETWEEN parent.{$this->left()} AND parent.{$this->right()}
@@ -249,7 +243,7 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
             	AND node.{$this->left()} BETWEEN sub_parent.{$this->left()} AND sub_parent.{$this->right()}
             	AND sub_parent.{$this->id()} = sub_tree.{$this->id()}
             GROUP BY node.{$this->id()}
-            HAVING Depth > 0
+            HAVING `Depth` > 0
             ORDER BY node.{$this->left()}";
 
         array_unshift($Arguments,$Query);
@@ -271,12 +265,12 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
         $Arguments=func_get_args();
         array_shift($Arguments);
         $Query="
-            SELECT node.*, (COUNT(parent.{$this->id()})-1 - (sub_tree.innerDepth )) AS Depth
+            SELECT node.*, (COUNT(parent.{$this->id()})-1 - (sub_tree.innerdepth )) AS `Depth`
             FROM {$this->table()} AS node,
             	{$this->table()} AS parent,
             	{$this->table()} AS sub_parent,
            	(
-            		SELECT node.{$this->id()}, (COUNT(parent.{$this->id()}) - 1) AS innerDepth
+            		SELECT node.{$this->id()}, (COUNT(parent.{$this->id()}) - 1) AS innerdepth
             		FROM {$this->table()} AS node,
             		{$this->table()} AS parent
             		WHERE node.{$this->left()} BETWEEN parent.{$this->left()} AND parent.{$this->right()}
@@ -288,7 +282,7 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
             	AND node.{$this->left()} BETWEEN sub_parent.{$this->left()} AND sub_parent.{$this->right()}
             	AND sub_parent.{$this->id()} = sub_tree.{$this->id()}
             GROUP BY node.{$this->id()}
-            HAVING Depth = 1
+            HAVING `Depth` = 1
             ORDER BY node.{$this->left()}";
 
         array_unshift($Arguments,$Query);
@@ -371,8 +365,7 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
         array_shift($Arguments); //first argument, the array
         array_shift($Arguments);
         if ($ConditionString) $ConditionString="WHERE $ConditionString";
-        $Query="SELECT {$this->right()} AS `Right`".
-        	" FROM {$this->table()} $ConditionString";
+        $Query="SELECT {$this->right()} AS `Right` FROM {$this->table()} $ConditionString";
 
         array_unshift($Arguments,$Query);
         $Sibl=call_user_func_array("Jf::sql",$Arguments);
@@ -445,8 +438,7 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
             $ValuesString.=",?";
             $Values[]=$v;
         }
-        $Query= "INSERT INTO {$this->table()} ({$this->left()},{$this->right()} $FieldsString) ".
-        	"VALUES(?,? $ValuesString)";
+        $Query= "INSERT INTO {$this->table()} ({$this->left()},{$this->right()} $FieldsString) VALUES (?,? $ValuesString)";
         array_unshift($Values,$Parent["Right"]+1);
         array_unshift($Values,$Parent["Right"]);
         array_unshift($Values,$Query);
@@ -490,5 +482,3 @@ class FullNestedSet extends BaseNestedSet implements ExtendedNestedSet
     }
 
 }
-
-?>

@@ -32,6 +32,11 @@ class JModel
 		$Adapter=get_class(Jf::$Db);
 		return $Adapter == "mysqli" or ($Adapter == "PDO" and Jf::$Db->getAttribute(PDO::ATTR_DRIVER_NAME)=="mysql");
 	}
+    protected function isPgSql()
+    {
+        $Adapter=get_class(Jf::$Db);
+        return ($Adapter == "PDO" and Jf::$Db->getAttribute(PDO::ATTR_DRIVER_NAME)=="pgsql");
+    }
 }
 
 /**
@@ -73,7 +78,7 @@ abstract class BaseRbac extends JModel
 	{
 		if ($ParentID === null)
 			$ParentID = $this->rootId ();
-		return (int)$this->{$this->type ()}->insertChildData ( array ("Title" => $Title, "Description" => $Description ), "ID=?", $ParentID );
+		return (int)$this->{$this->type ()}->insertChildData ( array ("Title" => $Title, "Description" => $Description ), "`ID`=?", $ParentID );
 	}
 
 	/**
@@ -131,8 +136,8 @@ abstract class BaseRbac extends JModel
 	 */
 	function count()
 	{
-		$Res = Jf::sql ( "SELECT COUNT(*) FROM {$this->tablePrefix()}{$this->type()}" );
-		return (int)$Res [0] ['COUNT(*)'];
+		$Res = Jf::sql ( "SELECT COUNT(*) AS row_count FROM {$this->tablePrefix()}{$this->type()}" );
+		return (int)$Res [0] ['row_count'];
 	}
 
 	/**
@@ -174,18 +179,20 @@ abstract class BaseRbac extends JModel
 			$GroupConcat="GROUP_CONCAT(parent.Title ORDER BY parent.Lft SEPARATOR '/')";
 		} elseif ($Adapter == "PDO" and Jf::$Db->getAttribute(PDO::ATTR_DRIVER_NAME)=="sqlite") {
 			$GroupConcat="GROUP_CONCAT(parent.Title,'/')";
-		} else {
+		} elseif ($this->isPgSql()) {
+            $GroupConcat="STRING_AGG(parent.\"Title\", '/' ORDER BY parent.\"Lft\")";
+        } else {
 			throw new \Exception ("Unknown Group_Concat on this type of database: {$Adapter}");
 		}
 
-		$res = Jf::sql ( "SELECT node.ID,{$GroupConcat} AS Path
-				FROM {$this->tablePrefix()}{$this->type()} AS node,
+		$res = Jf::sql ( "SELECT node.`ID`,{$GroupConcat} AS `Path`
+				FROM `{$this->tablePrefix()}{$this->type()}` AS node,
 				{$this->tablePrefix()}{$this->type()} AS parent
-				WHERE node.Lft BETWEEN parent.Lft AND parent.Rght
-				AND  node.Title=?
-				GROUP BY node.ID
-				HAVING Path = ?
-				", $Parts [count ( $Parts ) - 1], $Path );
+				WHERE node.`Lft` BETWEEN parent.`Lft` AND parent.`Rght`
+				AND  node.`Title`=?
+				GROUP BY node.`ID`
+				HAVING `Path` = ?",
+            $Parts [count ( $Parts ) - 1], $Path );
 
 		if ($res)
 			return $res [0] ['ID'];
@@ -193,17 +200,17 @@ abstract class BaseRbac extends JModel
 			return null;
 			// TODO: make the below SQL work, so that 1024 limit is over
 
-		$QueryBase = ("SELECT n0.ID  \nFROM {$this->tablePrefix()}{$this->type()} AS n0");
-		$QueryCondition = "\nWHERE 	n0.Title=?";
+		$QueryBase = ("SELECT n0.`ID`  \nFROM `{$this->tablePrefix()}{$this->type()}` AS n0");
+		$QueryCondition = "\nWHERE 	n0.`Title`=?";
 
 		for($i = 1; $i < count ( $Parts ); ++ $i)
 		{
 			$j = $i - 1;
-			$QueryBase .= "\nJOIN 		{$this->tablePrefix()}{$this->type()} AS n{$i} ON (n{$j}.Lft BETWEEN n{$i}.Lft+1 AND n{$i}.Rght)";
-			$QueryCondition .= "\nAND 	n{$i}.Title=?";
+			$QueryBase .= "\nJOIN `{$this->tablePrefix()}{$this->type()}` AS n{$i} ON (n{$j}.`Lft` BETWEEN n{$i}.`Lft`+1 AND n{$i}.`Rght`)";
+			$QueryCondition .= "\nAND 	n{$i}.`Title`=?";
 			// Forcing middle elements
-			$QueryBase .= "\nLEFT JOIN 	{$this->tablePrefix()}{$this->type()} AS nn{$i} ON (nn{$i}.Lft BETWEEN n{$i}.Lft+1 AND n{$j}.Lft-1)";
-			$QueryCondition .= "\nAND 	nn{$i}.Lft IS NULL";
+			$QueryBase .= "\nLEFT JOIN 	`{$this->tablePrefix()}{$this->type()}` AS nn{$i} ON (nn{$i}.`Lft` BETWEEN n{$i}.`Lft`+1 AND n{$j}.`Lft`-1)";
+			$QueryCondition .= "\nAND 	nn{$i}.`Lft` IS NULL";
 		}
 		$Query = $QueryBase . $QueryCondition;
 		$PartsRev = array_reverse ( $Parts );
@@ -226,7 +233,7 @@ abstract class BaseRbac extends JModel
 	 */
 	public function titleId($Title)
 	{
-		return $this->{$this->type ()}->getID ( "Title=?", $Title );
+		return $this->{$this->type ()}->getID ( "`Title`=?", $Title );
 	}
 
 	/**
@@ -248,7 +255,7 @@ abstract class BaseRbac extends JModel
 	 */
 	function getTitle($ID)
 	{
-		$r = $this->getRecord ( "ID=?", $ID );
+		$r = $this->getRecord ( "`ID`=?", $ID );
 		if ($r)
 			return $r ['Title'];
 		else
@@ -263,7 +270,7 @@ abstract class BaseRbac extends JModel
 	 */
 	function getPath($ID)
 	{
-	    $res = $this->{$this->type ()}->pathConditional ( "ID=?", $ID );
+	    $res = $this->{$this->type ()}->pathConditional ( "`ID`=?", $ID );
 	    $out = null;
 	    if (is_array ( $res ))
 	        foreach ( $res as $r )
@@ -285,7 +292,7 @@ abstract class BaseRbac extends JModel
 	 */
 	function getDescription($ID)
 	{
-	    $r = $this->getRecord ( "ID=?", $ID );
+	    $r = $this->getRecord ( "`ID`=?", $ID );
 	    if ($r)
 	        return $r ['Description'];
 	    else
@@ -310,7 +317,7 @@ abstract class BaseRbac extends JModel
 		if ($NewDescription !== null)
 			$Data ['Description'] = $NewDescription;
 
-        return $this->{$this->type ()}->editData ( $Data, "ID=?", $ID ) == 1;
+        return $this->{$this->type ()}->editData ( $Data, "`ID`=?", $ID ) == 1;
 	}
 
 	/**
@@ -322,7 +329,7 @@ abstract class BaseRbac extends JModel
 	 */
 	function children($ID)
 	{
-		return $this->{$this->type ()}->childrenConditional ( "ID=?", $ID );
+		return $this->{$this->type ()}->childrenConditional ( "`ID`=?", $ID );
 	}
 
 	/**
@@ -334,7 +341,7 @@ abstract class BaseRbac extends JModel
 	 */
 	function descendants($ID)
 	{
-		$res = $this->{$this->type ()}->descendantsConditional(/* absolute depths*/false, "ID=?", $ID );
+		$res = $this->{$this->type ()}->descendantsConditional(/* absolute depths*/false, "`ID`=?", $ID );
 		$out = array ();
 		if (is_array ( $res ))
 			foreach ( $res as $v )
@@ -349,7 +356,7 @@ abstract class BaseRbac extends JModel
 	 */
 	function depth($ID)
 	{
-		return $this->{$this->type ()}->depthConditional ( "ID=?", $ID );
+		return $this->{$this->type ()}->depthConditional ( "`ID`=?", $ID );
 	}
 
 	/**
@@ -361,7 +368,7 @@ abstract class BaseRbac extends JModel
 	 */
 	function parentNode($ID)
 	{
-		return $this->{$this->type ()}->parentNodeConditional ( "ID=?", $ID );
+		return $this->{$this->type ()}->parentNodeConditional ( "`ID`=?", $ID );
 	}
 
 	/**
@@ -381,15 +388,17 @@ abstract class BaseRbac extends JModel
 			throw new \Exception ("You must pass true to this function, otherwise it won't work.");
 			return;
 		}
-		$res = Jf::sql ( "DELETE FROM {$this->tablePrefix()}{$this->type()}" );
+		$res = Jf::sql ( "DELETE FROM `{$this->tablePrefix()}{$this->type()}`" );
 		$Adapter = get_class(Jf::$Db);
 		if ($this->isMySql())
 			Jf::sql ( "ALTER TABLE {$this->tablePrefix()}{$this->type()} AUTO_INCREMENT=1 " );
 		elseif ($this->isSQLite())
 			Jf::sql ( "delete from sqlite_sequence where name=? ", $this->tablePrefix () . "{$this->type()}" );
+        elseif ($this->isPgSql())
+            Jf::sql ( "ALTER SEQUENCE {$this->tablePrefix()}{$this->type()}_id_seq RESTART WITH 1");
 		else
 			throw new \Exception ( "Rbac can not reset table on this type of database: {$Adapter}" );
-		$iid = Jf::sql ( "INSERT INTO {$this->tablePrefix()}{$this->type()} (Title,Description,Lft,Rght) VALUES (?,?,?,?)", "root", "root",0,1 );
+		$iid = Jf::sql ( "INSERT INTO `{$this->tablePrefix()}{$this->type()}` (`Title`,`Description`,`Lft`,`Rght`) VALUES (?,?,?,?)", "root", "root",0,1 );
 		return (int)$res;
 	}
 
@@ -427,8 +436,8 @@ abstract class BaseRbac extends JModel
 	            $PermissionID = Jf::$Rbac->Permissions->titleId($Permission);
 	    }
 
-	    return Jf::sql("INSERT INTO {$this->tablePrefix()}rolepermissions
-	        (RoleID,PermissionID,AssignmentDate)
+	    return Jf::sql("INSERT INTO `{$this->tablePrefix()}rolepermissions`
+	        (`RoleID`,`PermissionID`,`AssignmentDate`)
 	        VALUES (?,?,?)", $RoleID, $PermissionID, Jf::time()) >= 1;
 	}
 
@@ -463,8 +472,8 @@ abstract class BaseRbac extends JModel
 	            $PermissionID = Jf::$Rbac->Permissions->titleId($Permission);
 	    }
 
-		return Jf::sql("DELETE FROM {$this->tablePrefix()}rolepermissions WHERE
-		    RoleID=? AND PermissionID=?", $RoleID, $PermissionID) == 1;
+		return Jf::sql("DELETE FROM `{$this->tablePrefix()}rolepermissions` WHERE
+		    `RoleID`=? AND `PermissionID`=?", $RoleID, $PermissionID) == 1;
 	}
 
 	/**
@@ -482,13 +491,16 @@ abstract class BaseRbac extends JModel
 			throw new \Exception ("You must pass true to this function, otherwise it won't work.");
 			return;
 		}
-		$res = Jf::sql ( "DELETE FROM {$this->tablePrefix()}rolepermissions" );
+		$res = Jf::sql ( "DELETE FROM `{$this->tablePrefix()}rolepermissions`" );
 
 		$Adapter = get_class(Jf::$Db);
 		if ($this->isMySql())
 			Jf::sql ( "ALTER TABLE {$this->tablePrefix()}rolepermissions AUTO_INCREMENT =1 " );
 		elseif ($this->isSQLite())
 			Jf::sql ( "delete from sqlite_sequence where name=? ", $this->tablePrefix () . "_rolepermissions" );
+        elseif ($this->isPgSql()) {
+            // There is no sequence for rolepermissions...
+        }
 		else
 			throw new \Exception ( "Rbac can not reset table on this type of database: {$Adapter}" );
 		$this->assign ( $this->rootId(), $this->rootId());
@@ -598,30 +610,30 @@ class RbacManager extends JModel
 
         if ($this->isSQLite())
         {
-            $LastPart="AS Temp ON ( TR.ID = Temp.RoleID)
+            $LastPart="AS `Temp` ON ( `TR`.`ID` = `Temp`.`RoleID`)
  							WHERE
- 							TUrel.UserID=?
+ 							`TUrel`.`UserID`=?
  							AND
- 							Temp.ID=?";
+ 							`Temp`.`ID`=?";
         }
         else //mysql
         {
-            $LastPart="ON ( TR.ID = TRel.RoleID)
+            $LastPart="ON ( `TR`.`ID` = `TRel`.`RoleID`)
  							WHERE
- 							TUrel.UserID=?
+ 							`TUrel`.`UserID`=?
  							AND
- 							TPdirect.ID=?";
+ 							`TPdirect`.`ID`=?";
         }
-        $Res=Jf::sql ( "SELECT COUNT(*) AS Result
+        $Res=Jf::sql ( "SELECT COUNT(*) AS `Result`
             FROM
-            {$this->tablePrefix()}userroles AS TUrel
+            `{$this->tablePrefix()}userroles` AS `TUrel`
 
-            JOIN {$this->tablePrefix()}roles AS TRdirect ON (TRdirect.ID=TUrel.RoleID)
-            JOIN {$this->tablePrefix()}roles AS TR ON ( TR.Lft BETWEEN TRdirect.Lft AND TRdirect.Rght)
+            JOIN `{$this->tablePrefix()}roles` AS `TRdirect` ON (`TRdirect`.`ID`=`TUrel`.`RoleID`)
+            JOIN `{$this->tablePrefix()}roles` AS `TR` ON ( `TR`.`Lft` BETWEEN `TRdirect`.`Lft` AND `TRdirect`.`Rght`)
             JOIN
-            (	{$this->tablePrefix()}permissions AS TPdirect
-            JOIN {$this->tablePrefix()}permissions AS TP ON ( TPdirect.Lft BETWEEN TP.Lft AND TP.Rght)
-            JOIN {$this->tablePrefix()}rolepermissions AS TRel ON (TP.ID=TRel.PermissionID)
+            (	`{$this->tablePrefix()}permissions` AS `TPdirect`
+            JOIN `{$this->tablePrefix()}permissions` AS `TP` ON ( `TPdirect`.`Lft` BETWEEN `TP`.`Lft` AND `TP`.`Rght`)
+            JOIN `{$this->tablePrefix()}rolepermissions` AS `TRel` ON (`TP`.`ID`=`TRel`.`PermissionID`)
             ) $LastPart",
             $UserID, $PermissionID );
 
@@ -722,9 +734,9 @@ class PermissionManager extends BaseRbac
 	{
 		$this->unassignRoles ( $ID );
 		if (! $Recursive)
-			return $this->permissions->deleteConditional ( "ID=?", $ID );
+			return $this->permissions->deleteConditional ( "`ID`=?", $ID );
 		else
-			return $this->permissions->deleteSubtreeConditional ( "ID=?", $ID );
+			return $this->permissions->deleteSubtreeConditional ( "`ID`=?", $ID );
 	}
 
 	/**
@@ -736,8 +748,7 @@ class PermissionManager extends BaseRbac
 	 */
 	function unassignRoles($ID)
 	{
-		$res = Jf::sql ( "DELETE FROM {$this->tablePrefix()}rolepermissions WHERE
-			PermissionID=?", $ID );
+		$res = Jf::sql ( "DELETE FROM `{$this->tablePrefix()}rolepermissions` WHERE `PermissionID`=?", $ID );
 		return (int)$res;
 	}
 
@@ -757,8 +768,7 @@ class PermissionManager extends BaseRbac
 
 		if ($OnlyIDs)
 		{
-			$Res = Jf::sql ( "SELECT RoleID AS `ID` FROM
-				{$this->tablePrefix()}rolepermissions WHERE PermissionID=? ORDER BY RoleID", $Permission );
+			$Res = Jf::sql ( "SELECT `RoleID` AS `ID` FROM `{$this->tablePrefix()}rolepermissions` WHERE `PermissionID`=? ORDER BY `RoleID`", $Permission );
 
 			if (is_array ( $Res ))
 			{
@@ -770,9 +780,9 @@ class PermissionManager extends BaseRbac
 			else
 				return null;
 		} else {
-		    return Jf::sql ( "SELECT `TP`.ID, `TP`.Title, `TP`.Description FROM {$this->tablePrefix()}roles AS `TP`
-    		    LEFT JOIN {$this->tablePrefix()}rolepermissions AS `TR` ON (`TR`.RoleID=`TP`.ID)
-    		    WHERE PermissionID=? ORDER BY TP.ID", $Permission );
+		    return Jf::sql ( "SELECT `TP`.`ID`, `TP`.`Title`, `TP`.`Description` FROM `{$this->tablePrefix()}roles` AS `TP`
+    		    LEFT JOIN `{$this->tablePrefix()}rolepermissions` AS `TR` ON (`TR`.`RoleID`=`TP`.`ID`)
+    		    WHERE `PermissionID`=? ORDER BY `TP`.`ID`", $Permission );
 		}
 	}
 }
@@ -825,9 +835,9 @@ class RoleManager extends BaseRbac
 		$this->unassignPermissions ( $ID );
 		$this->unassignUsers ( $ID );
 		if (! $Recursive)
-			return $this->roles->deleteConditional ( "ID=?", $ID );
+			return $this->roles->deleteConditional ( "`ID`=?", $ID );
 		else
-			return $this->roles->deleteSubtreeConditional ( "ID=?", $ID );
+			return $this->roles->deleteSubtreeConditional ( "`ID`=?", $ID );
 	}
 
 	/**
@@ -839,8 +849,7 @@ class RoleManager extends BaseRbac
 	 */
 	function unassignPermissions($ID)
 	{
-		$r = Jf::sql ( "DELETE FROM {$this->tablePrefix()}rolepermissions WHERE
-			RoleID=? ", $ID );
+		$r = Jf::sql ( "DELETE FROM `{$this->tablePrefix()}rolepermissions` WHERE `RoleID`=? ", $ID );
 		return $r;
 	}
 
@@ -853,8 +862,7 @@ class RoleManager extends BaseRbac
 	 */
 	function unassignUsers($ID)
 	{
-		return Jf::sql ( "DELETE FROM {$this->tablePrefix()}userroles WHERE
-			RoleID=?", $ID );
+		return Jf::sql ( "DELETE FROM `{$this->tablePrefix()}userroles` WHERE `RoleID`=?", $ID );
 	}
 
 	/**
@@ -871,28 +879,29 @@ class RoleManager extends BaseRbac
 	function hasPermission($Role, $Permission)
 	{
 		$Res = Jf::sql ( "
-					SELECT COUNT(*) AS Result
-					FROM {$this->tablePrefix()}rolepermissions AS TRel
-					JOIN {$this->tablePrefix()}permissions AS TP ON ( TP.ID= TRel.PermissionID)
-					JOIN {$this->tablePrefix()}roles AS TR ON ( TR.ID = TRel.RoleID)
-					WHERE TR.Lft BETWEEN
-					(SELECT Lft FROM {$this->tablePrefix()}roles WHERE ID=?)
+					SELECT COUNT(*) AS `Result`
+					FROM `{$this->tablePrefix()}rolepermissions` AS `TRel`
+					JOIN `{$this->tablePrefix()}permissions` AS `TP` ON ( `TP`.`ID`= `TRel`.`PermissionID`)
+					JOIN `{$this->tablePrefix()}roles` AS `TR` ON ( `TR`.`ID` = `TRel`.`RoleID`)
+					WHERE `TR`.`Lft` BETWEEN
+					(SELECT `Lft` FROM `{$this->tablePrefix()}roles` WHERE `ID`=?)
 					AND
-					(SELECT Rght FROM {$this->tablePrefix()}roles WHERE ID=?)
+					(SELECT `Rght` FROM `{$this->tablePrefix()}roles` WHERE `ID`=?)".
 					/* the above section means any row that is a descendants of our role (if descendant roles have some permission, then our role has it two) */
-					AND TP.ID IN (
-					SELECT parent.ID
-					FROM {$this->tablePrefix()}permissions AS node,
-					{$this->tablePrefix()}permissions AS parent
-					WHERE node.Lft BETWEEN parent.Lft AND parent.Rght
-					AND ( node.ID=? )
-					ORDER BY parent.Lft
-					);
+                    "
+					AND `TP`.`ID` IN (
+					SELECT parent.`ID`
+					FROM `{$this->tablePrefix()}permissions` AS node,
+					`{$this->tablePrefix()}permissions` AS parent
+					WHERE node.`Lft` BETWEEN parent.`Lft` AND parent.`Rght`
+					AND ( node.`ID`=? )
+					ORDER BY parent.`Lft`
+					)",
 					/*
 					the above section returns all the parents of (the path to) our permission, so if one of our role or its descendants
 					has an assignment to any of them, we're good.
 					*/
-					", $Role, $Role, $Permission );
+					$Role, $Role, $Permission );
 		return $Res [0] ['Result'] >= 1;
 	}
 
@@ -913,7 +922,7 @@ class RoleManager extends BaseRbac
 
 		if ($OnlyIDs)
 		{
-			$Res = Jf::sql ( "SELECT PermissionID AS `ID` FROM {$this->tablePrefix()}rolepermissions WHERE RoleID=? ORDER BY PermissionID", $Role );
+			$Res = Jf::sql ( "SELECT `PermissionID` AS `ID` FROM `{$this->tablePrefix()}rolepermissions` WHERE `RoleID`=? ORDER BY `PermissionID`", $Role );
 			if (is_array ( $Res ))
 			{
 				$out = array ();
@@ -924,9 +933,9 @@ class RoleManager extends BaseRbac
 			else
 				return null;
 		} else {
-	        return Jf::sql ( "SELECT `TP`.ID, `TP`.Title, `TP`.Description FROM {$this->tablePrefix()}permissions AS `TP`
-		        LEFT JOIN {$this->tablePrefix()}rolepermissions AS `TR` ON (`TR`.PermissionID=`TP`.ID)
-		        WHERE RoleID=? ORDER BY TP.ID", $Role );
+	        return Jf::sql ( "SELECT `TP`.`ID`, `TP`.`Title`, `TP`.`Description` FROM `{$this->tablePrefix()}permissions` AS `TP`
+		        LEFT JOIN `{$this->tablePrefix()}rolepermissions` AS `TR` ON (`TR`.`PermissionID`=`TP`.`ID`)
+		        WHERE `RoleID`=? ORDER BY `TP`.`ID`", $Role );
 		}
 	}
 }
@@ -975,12 +984,11 @@ class RbacUserManager extends JModel
 				$RoleID = Jf::$Rbac->Roles->titleId ( $Role );
 		}
 
-		$R = Jf::sql ( "SELECT * FROM {$this->tablePrefix()}userroles AS TUR
-			JOIN {$this->tablePrefix()}roles AS TRdirect ON (TRdirect.ID=TUR.RoleID)
-			JOIN {$this->tablePrefix()}roles AS TR ON (TR.Lft BETWEEN TRdirect.Lft AND TRdirect.Rght)
-
-			WHERE
-			TUR.UserID=? AND TR.ID=?", $UserID, $RoleID );
+		$R = Jf::sql ( "SELECT * FROM `{$this->tablePrefix()}userroles` AS `TUR`
+                JOIN `{$this->tablePrefix()}roles` AS `TRdirect` ON (`TRdirect`.`ID`=`TUR`.`RoleID`)
+                JOIN `{$this->tablePrefix()}roles` AS `TR` ON (`TR`.`Lft` BETWEEN `TRdirect`.`Lft` AND `TRdirect`.`Rght`)
+                WHERE `TUR`.`UserID`=? AND `TR`.`ID`=?",
+            $UserID, $RoleID );
 		return $R !== null;
 	}
 
@@ -1010,10 +1018,10 @@ class RbacUserManager extends JModel
 				$RoleID = Jf::$Rbac->Roles->titleId($Role);
 		}
 
-		$res = Jf::sql ( "INSERT INTO {$this->tablePrefix()}userroles
-				(UserID,RoleID,AssignmentDate)
-				VALUES (?,?,?)
-				", $UserID, $RoleID, Jf::time () );
+		$res = Jf::sql ( "INSERT INTO `{$this->tablePrefix()}userroles`
+				(`UserID`,`RoleID`,`AssignmentDate`)
+				VALUES (?,?,?)",
+            $UserID, $RoleID, Jf::time () );
 		return $res >= 1;
 	}
 
@@ -1045,7 +1053,7 @@ class RbacUserManager extends JModel
 	            $RoleID = Jf::$Rbac->Roles->titleId($Role);
 	    }
 
-	    return Jf::sql("DELETE FROM {$this->tablePrefix()}userroles WHERE UserID=? AND RoleID=?", $UserID, $RoleID) >= 1;
+	    return Jf::sql("DELETE FROM `{$this->tablePrefix()}userroles` WHERE `UserID`=? AND `RoleID`=?", $UserID, $RoleID) >= 1;
 	}
 
 	/**
@@ -1063,12 +1071,12 @@ class RbacUserManager extends JModel
 	   if ($UserID === null)
 		    throw new \RbacUserNotProvidedException ("\$UserID is a required argument.");
 
-		return Jf::sql ( "SELECT TR.*
+		return Jf::sql ( "SELECT `TR`.*
 			FROM
-			{$this->tablePrefix()}userroles AS `TRel`
-			JOIN {$this->tablePrefix()}roles AS `TR` ON
-			(`TRel`.RoleID=`TR`.ID)
-			WHERE TRel.UserID=?", $UserID );
+			`{$this->tablePrefix()}userroles` AS `TRel`
+			JOIN `{$this->tablePrefix()}roles` AS `TR` ON
+			(`TRel`.`RoleID`=`TR`.`ID`)
+			WHERE `TRel`.`UserID`=?", $UserID );
 	}
 
 	/**
@@ -1084,7 +1092,7 @@ class RbacUserManager extends JModel
 		if ($UserID === null)
 		    throw new \RbacUserNotProvidedException ("\$UserID is a required argument.");
 
-		$Res = Jf::sql ( "SELECT COUNT(*) AS Result FROM {$this->tablePrefix()}userroles WHERE UserID=?", $UserID );
+		$Res = Jf::sql ( "SELECT COUNT(*) AS `Result` FROM `{$this->tablePrefix()}userroles` WHERE `UserID`=?", $UserID );
 		return (int)$Res [0] ['Result'];
 	}
 
@@ -1103,13 +1111,16 @@ class RbacUserManager extends JModel
 			throw new \Exception ("You must pass true to this function, otherwise it won't work.");
 			return;
 		}
-		$res = Jf::sql ( "DELETE FROM {$this->tablePrefix()}userroles" );
+		$res = Jf::sql ( "DELETE FROM `{$this->tablePrefix()}userroles`" );
 
 		$Adapter = get_class(Jf::$Db);
 		if ($this->isMySql())
 			Jf::sql ( "ALTER TABLE {$this->tablePrefix()}userroles AUTO_INCREMENT =1 " );
 		elseif ($this->isSQLite())
 			Jf::sql ( "delete from sqlite_sequence where name=? ", $this->tablePrefix () . "_userroles" );
+        elseif ($this->isPgSql()) {
+            // Userroles has no sequence to reset.
+        }
 		else
 			throw new \Exception ("Rbac can not reset table on this type of database: {$Adapter}");
 		$this->assign ( "root", 1 /* root user */ );
